@@ -1,0 +1,70 @@
+systemd-netns-helper (0.11) bookworm; urgency=medium
+
+  * Combine BindsTo and After for more safety.
+
+ -- Josselin Mouette < >  Thu, 23 May 2024 09:13:18 +0200
+
+systemd-netns-helper (0.10) bookworm; urgency=medium
+
+  * Terminate netns more thoroughly on startup.
+
+ -- Josselin Mouette < >  Mon, 08 Apr 2024 14:11:45 +0200
+
+systemd-netns-helper (0.9) bookworm; urgency=medium
+
+  * Add support for bonding interfaces (inside / outside the netns).
+
+ -- Josselin Mouette < >  Fri, 05 Apr 2024 13:35:56 +0200
+
+systemd-netns-helper (0.8) bookworm; urgency=medium
+
+  * Improve reliability of services restart in complex environments.
+
+ -- Josselin Mouette < >  Thu, 07 Mar 2024 19:50:21 +0100
+
+systemd-netns-helper (0.7) bookworm; urgency=medium
+
+  * Support P2P blocking through an awesome iproute2 configuration.
+
+ -- Josselin Mouette < >  Fri, 01 Mar 2024 19:46:51 +0100
+
+systemd-netns-helper (0.6) bookworm; urgency=medium
+
+  * Add support for VLAN interfaces.
+
+ -- Josselin Mouette < >  Wed, 31 Jan 2024 17:12:16 +0100
+
+systemd-netns-helper (0.5) bookworm; urgency=medium
+
+  * New "link-netns" stanza in /e/n/i to create automatically a pair of veth
+    devices.
+
+ -- Josselin Mouette < >  Tue, 30 Jan 2024 14:16:50 +0100
+
+systemd-netns-helper (0.4) bookworm; urgency=medium
+
+  * Use ifquery -l rather than parsing interfaces file.
+  * README.md: fix syntax
+  * Run ip netns delete before add
+
+ -- Josselin Mouette < >  Fri, 19 Jan 2024 18:10:02 +0100
+
+systemd-netns-helper (0.3) bookworm; urgency=medium
+
+  * Avoid overwriting resolv.conf from the default namespace.
+  * Rewrite of the scripts in one single Python script.
+  * Implement XFRM interfaces in dedicated namespaces for IPsec isolation.
+
+ -- Josselin Mouette < >  Wed, 13 Dec 2023 17:13:17 +0100
+
+systemd-netns-helper (0.2) bookworm; urgency=medium
+
+  * Handle correctly services with a dash in the name.
+
+ -- Josselin Mouette < >  Fri, 08 Dec 2023 16:45:56 +0100
+
+systemd-netns-helper (0.1) bookworm; urgency=medium
+
+  * Initial release.
+
+ -- Josselin Mouette < >  Fri, 08 Dec 2023 15:57:59 +0100

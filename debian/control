@@ -1,0 +1,17 @@
+Source: systemd-netns-helper
+Maintainer: Josselin Mouette < >
+Build-Depends: debhelper (>= 13)
+Standards-Version: 4.6.2
+Section: admin
+Priority: optional
+
+Package: systemd-netns-helper
+Architecture: all
+Section: admin
+Priority: optional
+Pre-Depends: ${misc:Pre-Depends}
+Depends: systemd, ifupdown, iproute2, ${misc:Depends}, python3
+Description: Launch systemd services in network namespaces
+ This package contains helpers to launch systemd services in
+ dedicated network namespaces and configure separate network
+ stacks for these services.

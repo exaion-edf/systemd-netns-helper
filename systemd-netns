@@ -1,0 +1,268 @@
+#! /usr/bin/python3
+
+import sys, os, signal, time
+from optparse import OptionParser
+from configparser import ConfigParser
+from subprocess import run as real_run
+from shutil import copy
+
+# Use a specific routing table ID for peer-to-peer blocking
+table_p2pblock = "117"
+
+def run (command):
+  print (' '.join(command))
+  real_run (command, check=True)
+
+def run_nocheck (command):
+  print (' '.join(command))
+  real_run (command)
+
+def run_capture (command):
+  return real_run (command, capture_output=True, universal_newlines = True).stdout
+
+def netns_exists (netns):
+  for line in run_capture (("ip", "netns")).splitlines():
+    if line.strip().split()[0] == netns:
+      return True
+  return False
+
+def init_netns (do_netns):
+  if not os.access (f'/etc/netns/{do_netns}/network/interfaces', os.R_OK):
+    error (f'Missing interfaces file for netns {do_netns}')
+  if netns_exists (do_netns):
+    destroy_netns (do_netns)
+  time.sleep (1)
+  run (("ip", "netns", "add", do_netns))
+
+def pids_netns (do_netns):
+  return [int(x) for x in run_capture (("ip", "netns", "pids", do_netns)).splitlines()]
+
+def kill_netns (do_netns, sig):
+  killed = ''
+  for pid in pids_netns (do_netns):
+    try:
+      os.kill (pid, sig)
+      killed += f' {pid}'
+    except ProcessLookupError:
+      pass
+  return killed
+
+def destroy_netns (do_netns):
+  killed = kill_netns (do_netns, signal.SIGTERM)
+  if killed:
+    print ('Terminated'+killed)
+    time.sleep (1)
+    killed = kill_netns (do_netns, signal.SIGKILL)
+    if killed:
+      print ('Killed'+killed)
+  run_nocheck (("ip", "netns", "delete", do_netns))
+
+def parse_eni (do_netns=None):
+    if do_netns:
+        filename = f'/etc/netns/{do_netns}/network/interfaces'
+    else:
+        filename = '/etc/network/interfaces'
+    ifaces = {}
+    auto_ifaces = set ()
+    cur = None
+    with open (filename) as eni:
+        for line in eni:
+            line = line.split('#',maxsplit=1)[0].strip().split()
+            if not line:
+                continue
+            if line[0] in ('auto', 'allow-hotplug'):
+                if len(line) == 2:
+                    auto_ifaces.add (line[1])
+            elif line[0] == 'iface':
+                if len(line) > 1:
+                    cur = line[1]
+                    ifaces[cur] = [line]
+            else:
+                ifaces[cur].append(line)
+    return (ifaces, auto_ifaces)
+
+def list_veth (do_netns):
+    (ifaces, auto_ifaces) = parse_eni ()
+    for iface in ifaces:
+        for line in iface:
+            if len(line) == 4 and line[0] == 'link-netns' and line[1] == do_netns:
+                yield (line[2], line[3])
+
+def create_veth (do_netns):
+    for (link1,link2) in list_veth (do_netns):
+        run (("ip", "link", "add", "name", link1, "type", "veth", "peer", "name", link2))
+        run (("ifup", link1))
+
+def destroy_veth (do_netns):
+    for (link1,link2) in list_veth (do_netns):
+        run_nocheck (("ifdown", link1))
+        run_nocheck (("ip", "link", "delete", link1))
+
+def ifup_netns (do_netns, already_moved_interfaces = []):
+  # Small hack so that ifupdown runs without complaining
+  for d in ["pre-up", "up", "down", "post-down"]:
+    src_path = f'/etc/network/if-{d}.d'
+    path = f'/etc/netns/{do_netns}/network/if-{d}.d'
+    if not os.path.isdir (path):
+      print (f"mkdir {path}")
+      os.mkdir (path)
+    for tool in ('ethtool', 'ifenslave'): # Maybe we can add more if needed
+        if os.path.exists (f'{src_path}/{tool}'):
+            print (f"copy {src_path}/{tool} {path}/{tool}")
+            copy (f'{src_path}/{tool}', f'{path}/{tool}')
+
+  # Avoid overwriting the system resolv.conf
+  resolv = f'/etc/netns/{do_netns}/resolv.conf'
+  if not os.path.exists (resolv):
+    print (f'touch {resolv}')
+    open (resolv,"w").close()
+
+  # Find out which physical interfaces need to be moved to the netns
+  (ifaces, auto_ifaces) = parse_eni (do_netns)
+  move_ifaces = set()
+  for iface in auto_ifaces:
+    bond=False
+    if iface in already_moved_interfaces:
+      # Already moved
+      continue
+    if '.' in iface:
+        # VLAN interface
+        [physdev, vlan_id] = iface.rsplit ('.', maxsplit=1)
+        if physdev in ifaces:
+            # The physical interface will be moved
+            pass
+        else:
+            # The physical interface remains in root netns
+            run (("ip", "link", "add", "link", physdev, "name", iface, "type", "vlan", "id", vlan_id))
+            move_ifaces.add (iface)
+        continue
+    for line in ifaces[iface]:
+        if line[0] == 'bond-slaves':
+            # Bond interface
+            bond=True
+            for slave in line[1:]:
+                move_ifaces.add (slave)
+    if iface.startswith("lo"):
+      # loopback
+      continue
+    # default
+    if not bond:
+        move_ifaces.add (iface)
+
+  for iface in move_ifaces:
+    run (("ip", "link", "set", iface, "netns", do_netns))
+
+  run (("ip", "netns", "exec", do_netns, "ifup", "-a"))
+
+def ifdown_netns (do_netns):
+  run_nocheck (("ip", "netns", "exec", do_netns, "ifdown", "-a"))
+
+
+# Our great hack to create cross-netns XFRM devices
+def get_xfrm_config (netns):
+  if not os.access (f'/etc/netns/{netns}/network/xfrm', os.R_OK):
+    return None
+  xfrmconfig = ConfigParser ()
+  xfrmconfig.read (f'/etc/netns/{netns}/network/xfrm')
+  return xfrmconfig
+
+def try_xfrm (netns):
+  xfrmconfig = get_xfrm_config (netns)
+  if not xfrmconfig: return
+
+  netns_for_physdev = {}
+  interfaces_for_netns = {}
+  create_route_rule_for_netns = {}
+  for s in xfrmconfig.sections():
+    dest_netns = xfrmconfig.get (s, "DestNetNS")
+    interfaces_for_netns[dest_netns] = []
+    create_route_rule_for_netns[dest_netns] = False
+
+  # Create destination netns
+  for dest_netns in interfaces_for_netns:
+    init_netns (dest_netns)
+
+  for interface in xfrmconfig.sections():
+    physdev = xfrmconfig.get (interface, "PhysDev", fallback="lo")
+    ifid = xfrmconfig.getint (interface, "IfId")
+    dest_netns = xfrmconfig.get (interface, "DestNetNS", fallback="xfrm_{netns}")
+    prefixes = [x.strip() for x in xfrmconfig.get(interface, "Prefixes").split(',')]
+    block_p2p = xfrmconfig.getboolean (interface, "BlockP2P", fallback=False)
+    create_route_rule_for_netns[dest_netns] |= block_p2p
+
+    # Move physdev in source netns
+    if physdev != "lo" and physdev not in netns_for_physdev:
+      run (("ip", "link", "set", physdev, "netns", netns))
+      netns_for_physdev[physdev] = dest_netns
+
+    # Create XFRM device in source netns
+    run (("ip", "netns", "exec", netns, "ip", "link", "add", interface, "type", "xfrm", "dev", physdev, "if_id", str(ifid)))
+
+    # Move XFRM device to destination netns
+    run (("ip", "netns", "exec", netns, "ip", "link", "set", interface, "netns", dest_netns))
+
+    # Add routes in destination netns
+    run (("ip", "netns", "exec", dest_netns, "ip", "link", "set", interface, "up"))
+    for prefix in prefixes:
+      if block_p2p:
+        run (("ip", "netns", "exec", dest_netns, "ip", "route", "add", prefix, "dev", interface, "table", table_p2pblock))
+      else:
+        run (("ip", "netns", "exec", dest_netns, "ip", "route", "add", prefix, "dev", interface))
+
+  # Move physical interfaces to their destination netns
+  for physdev, dest_netns in netns_for_physdev.items():
+    run (("ip", "netns", "exec", netns, "ip", "link", "set", physdev, "netns", dest_netns))
+    interfaces_for_netns[dest_netns].append (physdev)
+
+  for dest_netns, moved_interfaces in interfaces_for_netns.items():
+    ifup_netns (dest_netns, moved_interfaces)
+    # Allow specific routing table for p2p blocking, only to the uplink
+    if create_route_rule_for_netns[dest_netns]:
+      defaultroute = run_capture (("ip", "netns", "exec", dest_netns, "ip", "route", "show", "default")).split()
+      for i in range(len(defaultroute)-1):
+        if defaultroute[i] == "dev":
+          uplink=defaultroute[i+1]
+          break
+      else:
+        print (f'Cannot find default route for {dest_netns}, routing to XFRM interfaces will not work')
+        continue
+      run (("ip", "netns", "exec", dest_netns, "ip", "rule", "add", "iif", uplink, "table", table_p2pblock))
+    # XFRM interfaces require routing enabled for this to mean anything
+    run (("ip", "netns", "exec", dest_netns, "sysctl", "-w", "net.ipv4.ip_forward=1"))
+
+def try_destroy_xfrm (netns):
+  xfrmconfig = get_xfrm_config (netns)
+  if not xfrmconfig: return
+
+  xfrmnetns = set(xfrmconfig.get (s, "DestNetNS") for s in xfrmconfig.sections())
+  for dest_netns in xfrmnetns:
+    ifdown_netns (dest_netns)
+    destroy_netns (dest_netns)
+
+
+def error(msg=None):
+  sys.stderr.write (f"Usage: {sys.argv[0]} start|stop netns_name\n")
+  if msg:
+    sys.strerr.write (msg+"\n")
+  sys.exit (1)
+
+def main():
+  if len(sys.argv) != 3: error()
+  action = sys.argv[1]
+  base_netns = sys.argv[2]
+
+  if action == 'start':
+    init_netns (base_netns)
+    create_veth (base_netns)
+    try_xfrm (base_netns)
+    ifup_netns (base_netns)
+  elif action == 'stop':
+    ifdown_netns (base_netns)
+    try_destroy_xfrm (base_netns)
+    destroy_veth (base_netns)
+    destroy_netns (base_netns)
+  else:
+    error ()
+
+if __name__ == "__main__":
+    main()

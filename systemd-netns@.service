@@ -1,0 +1,12 @@
+[Unit]
+Description=Named network namespace %i
+Before=%i.service
+PartOf=%i.service
+After=network.target
+ConditionPathIsDirectory=/etc/netns/%i/network
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/sbin/systemd-netns start %i
+ExecStop=/usr/sbin/systemd-netns stop %i
