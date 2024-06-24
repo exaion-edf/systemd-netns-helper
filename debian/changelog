@@ -1,4 +1,4 @@
-systemd-netns-helper (0.12) UNRELEASED; urgency=medium
+systemd-netns-helper (0.12) bookworm; urgency=medium
 
   * Add support for bridge interfaces.
   * Fix logic for underlay XFRM interfaces:
@@ -7,7 +7,7 @@ systemd-netns-helper (0.12) UNRELEASED; urgency=medium
     + Simplify interfaces logic.
     + Documet to use the device from the strongswan netns, not the tunnel one.
 
- -- Josselin Mouette < >  Mon, 17 Jun 2024 17:59:59 +0200
+ -- Josselin Mouette < >  Mon, 17 Jun 2024 19:23:24 +0200
 
 systemd-netns-helper (0.11) bookworm; urgency=medium
 
