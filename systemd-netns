@@ -106,7 +106,7 @@ def ifup_netns (do_netns, already_moved_interfaces = []):
     if not os.path.isdir (path):
       print (f"mkdir {path}")
       os.mkdir (path)
-    for tool in ('ethtool', 'ifenslave'): # Maybe we can add more if needed
+    for tool in ('ethtool', 'ifenslave', 'bridge'): # Maybe we can add more if needed
         if os.path.exists (f'{src_path}/{tool}'):
             print (f"copy {src_path}/{tool} {path}/{tool}")
             copy (f'{src_path}/{tool}', f'{path}/{tool}')
@@ -121,7 +121,7 @@ def ifup_netns (do_netns, already_moved_interfaces = []):
   (ifaces, auto_ifaces) = parse_eni (do_netns)
   move_ifaces = set()
   for iface in auto_ifaces:
-    bond=False
+    bondbridge=False
     if iface in already_moved_interfaces:
       # Already moved
       continue
@@ -137,16 +137,17 @@ def ifup_netns (do_netns, already_moved_interfaces = []):
             move_ifaces.add (iface)
         continue
     for line in ifaces[iface]:
-        if line[0] == 'bond-slaves':
+        if line[0] in ('bond-slaves', 'bridge_ports'):
             # Bond interface
-            bond=True
+            bondbridge=True
             for slave in line[1:]:
-                move_ifaces.add (slave)
+                if slave not in already_moved_interfaces:
+                    move_ifaces.add (slave)
     if iface.startswith("lo"):
       # loopback
       continue
     # default
-    if not bond:
+    if not bondbridge:
         move_ifaces.add (iface)
 
   for iface in move_ifaces:

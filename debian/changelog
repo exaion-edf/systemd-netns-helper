@@ -1,3 +1,9 @@
+systemd-netns-helper (0.12) UNRELEASED; urgency=medium
+
+  * Add support for bridge interfaces.
+
+ -- Josselin Mouette < >  Mon, 17 Jun 2024 17:59:59 +0200
+
 systemd-netns-helper (0.11) bookworm; urgency=medium
 
   * Combine BindsTo and After for more safety.
