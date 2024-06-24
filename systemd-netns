@@ -98,7 +98,7 @@ def destroy_veth (do_netns):
         run_nocheck (("ifdown", link1))
         run_nocheck (("ip", "link", "delete", link1))
 
-def ifup_netns (do_netns, already_moved_interfaces = []):
+def move_interfaces (do_netns):
   # Small hack so that ifupdown runs without complaining
   for d in ["pre-up", "up", "down", "post-down"]:
     src_path = f'/etc/network/if-{d}.d'
@@ -122,9 +122,6 @@ def ifup_netns (do_netns, already_moved_interfaces = []):
   move_ifaces = set()
   for iface in auto_ifaces:
     bondbridge=False
-    if iface in already_moved_interfaces:
-      # Already moved
-      continue
     if '.' in iface:
         # VLAN interface
         [physdev, vlan_id] = iface.rsplit ('.', maxsplit=1)
@@ -141,8 +138,7 @@ def ifup_netns (do_netns, already_moved_interfaces = []):
             # Bond interface
             bondbridge=True
             for slave in line[1:]:
-                if slave not in already_moved_interfaces:
-                    move_ifaces.add (slave)
+                move_ifaces.add (slave)
     if iface.startswith("lo"):
       # loopback
       continue
@@ -153,6 +149,7 @@ def ifup_netns (do_netns, already_moved_interfaces = []):
   for iface in move_ifaces:
     run (("ip", "link", "set", iface, "netns", do_netns))
 
+def ifup_netns (do_netns):
   run (("ip", "netns", "exec", do_netns, "ifup", "-a"))
 
 def ifdown_netns (do_netns):
@@ -171,33 +168,28 @@ def try_xfrm (netns):
   xfrmconfig = get_xfrm_config (netns)
   if not xfrmconfig: return
 
-  netns_for_physdev = {}
-  interfaces_for_netns = {}
+  dest_netnss = set()
   create_route_rule_for_netns = {}
   for s in xfrmconfig.sections():
     dest_netns = xfrmconfig.get (s, "DestNetNS")
-    interfaces_for_netns[dest_netns] = []
+    dest_netnss.add (dest_netns)
     create_route_rule_for_netns[dest_netns] = False
 
   # Create destination netns
-  for dest_netns in interfaces_for_netns:
+  for dest_netns in dest_netnss:
     init_netns (dest_netns)
+    move_interfaces (dest_netns)
 
   for interface in xfrmconfig.sections():
-    physdev = xfrmconfig.get (interface, "PhysDev", fallback="lo")
+    underdev = xfrmconfig.get (interface, "UnderlayDev", fallback="lo")
     ifid = xfrmconfig.getint (interface, "IfId")
     dest_netns = xfrmconfig.get (interface, "DestNetNS", fallback="xfrm_{netns}")
     prefixes = [x.strip() for x in xfrmconfig.get(interface, "Prefixes").split(',')]
     block_p2p = xfrmconfig.getboolean (interface, "BlockP2P", fallback=False)
     create_route_rule_for_netns[dest_netns] |= block_p2p
 
-    # Move physdev in source netns
-    if physdev != "lo" and physdev not in netns_for_physdev:
-      run (("ip", "link", "set", physdev, "netns", netns))
-      netns_for_physdev[physdev] = dest_netns
-
     # Create XFRM device in source netns
-    run (("ip", "netns", "exec", netns, "ip", "link", "add", interface, "type", "xfrm", "dev", physdev, "if_id", str(ifid)))
+    run (("ip", "netns", "exec", netns, "ip", "link", "add", interface, "type", "xfrm", "dev", underdev, "if_id", str(ifid)))
 
     # Move XFRM device to destination netns
     run (("ip", "netns", "exec", netns, "ip", "link", "set", interface, "netns", dest_netns))
@@ -210,13 +202,8 @@ def try_xfrm (netns):
       else:
         run (("ip", "netns", "exec", dest_netns, "ip", "route", "add", prefix, "dev", interface))
 
-  # Move physical interfaces to their destination netns
-  for physdev, dest_netns in netns_for_physdev.items():
-    run (("ip", "netns", "exec", netns, "ip", "link", "set", physdev, "netns", dest_netns))
-    interfaces_for_netns[dest_netns].append (physdev)
-
-  for dest_netns, moved_interfaces in interfaces_for_netns.items():
-    ifup_netns (dest_netns, moved_interfaces)
+  for dest_netns in dest_netnss:
+    ifup_netns (dest_netns)
     # Allow specific routing table for p2p blocking, only to the uplink
     if create_route_rule_for_netns[dest_netns]:
       defaultroute = run_capture (("ip", "netns", "exec", dest_netns, "ip", "route", "show", "default")).split()
@@ -255,11 +242,12 @@ def main():
   if action == 'start':
     init_netns (base_netns)
     create_veth (base_netns)
+    move_interfaces (base_netns)
     try_xfrm (base_netns)
     ifup_netns (base_netns)
   elif action == 'stop':
-    ifdown_netns (base_netns)
     try_destroy_xfrm (base_netns)
+    ifdown_netns (base_netns)
     destroy_veth (base_netns)
     destroy_netns (base_netns)
   else:

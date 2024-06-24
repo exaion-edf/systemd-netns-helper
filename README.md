@@ -151,7 +151,7 @@ following:
 	[ipsec1]
 	IfId=18
 	DestNetNS=tunnel2
-	PhysDev=ens5
+	UnderlayDev=ens5
 	Prefixes=10.143.14.0/23, 10.143.18.0/27
 	BlockP2P=true
 
@@ -167,9 +167,9 @@ For each one the settings mean:
    the tunnel.
  * DestNetNS: namespace to which you want to move the tunneled traffic.
    Defaults to *xfrm\_myservice*.
- * PhysDev (optional): if you want hardware-accelerated IPsec, set this
-   to the physical interface that you will attach to the tunneled
-   traffic namespace (the same that is mentioned in `interfaces`).
+ * UnderlayDev (optional): if you want hardware-accelerated IPsec, set
+   this to the physical interface that holds the IPsec service (in the
+   namespace allocated to strongswan).
  * BlockP2P (optional): setting this will add the route to your prefixes
    in a specific routing table that is only available to the upstream
    link. If the next hop is a firewall (which is recommended), the
