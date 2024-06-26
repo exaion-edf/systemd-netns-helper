@@ -1,8 +1,9 @@
-systemd-netns-helper (0.13) UNRELEASED; urgency=medium
+systemd-netns-helper (0.13) bookworm; urgency=medium
 
   * Disable Python buffering to ease debugging.
+  * Add MTU setting for XFRM interfaces.
 
- -- Josselin Mouette < >  Mon, 24 Jun 2024 08:54:27 +0200
+ -- Josselin Mouette < >  Wed, 26 Jun 2024 08:05:18 +0200
 
 systemd-netns-helper (0.12) bookworm; urgency=medium
 

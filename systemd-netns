@@ -186,10 +186,11 @@ def try_xfrm (netns):
     dest_netns = xfrmconfig.get (interface, "DestNetNS", fallback="xfrm_{netns}")
     prefixes = [x.strip() for x in xfrmconfig.get(interface, "Prefixes").split(',')]
     block_p2p = xfrmconfig.getboolean (interface, "BlockP2P", fallback=False)
+    mtu = xfrmconfig.getint (interface, "MTU", fallback=1500)
     create_route_rule_for_netns[dest_netns] |= block_p2p
 
     # Create XFRM device in source netns
-    run (("ip", "netns", "exec", netns, "ip", "link", "add", interface, "type", "xfrm", "dev", underdev, "if_id", str(ifid)))
+    run (("ip", "netns", "exec", netns, "ip", "link", "add", interface, "mtu", str(mtu), "type", "xfrm", "dev", underdev, "if_id", str(ifid)))
 
     # Move XFRM device to destination netns
     run (("ip", "netns", "exec", netns, "ip", "link", "set", interface, "netns", dest_netns))
