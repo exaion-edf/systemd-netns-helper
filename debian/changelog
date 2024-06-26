@@ -1,3 +1,9 @@
+systemd-netns-helper (0.14) UNRELEASED; urgency=medium
+
+  * Document the MTU setting.
+
+ -- Josselin Mouette < >  Wed, 26 Jun 2024 08:03:34 +0200
+
 systemd-netns-helper (0.13) bookworm; urgency=medium
 
   * Disable Python buffering to ease debugging.

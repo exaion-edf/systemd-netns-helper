@@ -174,6 +174,7 @@ For each one the settings mean:
    in a specific routing table that is only available to the upstream
    link. If the next hop is a firewall (which is recommended), the
    firewall will filter all traffic between VPN hosts.
+ * MTU (optional): sets the MTU for the XFRM interface.
 
 ## Caveats
 
