@@ -1,9 +1,9 @@
-systemd-netns-helper (0.14) UNRELEASED; urgency=medium
+systemd-netns-helper (0.14) bookworm; urgency=medium
 
   * Document the MTU setting.
   * Fix bug in list_veth that broke veth support.
 
- -- Josselin Mouette < >  Wed, 26 Jun 2024 08:03:34 +0200
+ -- Josselin Mouette < >  Wed, 24 Jul 2024 19:44:51 +0200
 
 systemd-netns-helper (0.13) bookworm; urgency=medium
 
