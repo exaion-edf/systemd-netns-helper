@@ -84,7 +84,7 @@ def parse_eni (do_netns=None):
 def list_veth (do_netns):
     (ifaces, auto_ifaces) = parse_eni ()
     for iface in ifaces:
-        for line in iface:
+        for line in ifaces[iface]:
             if len(line) == 4 and line[0] == 'link-netns' and line[1] == do_netns:
                 yield (line[2], line[3])
 

@@ -1,6 +1,7 @@
 systemd-netns-helper (0.14) UNRELEASED; urgency=medium
 
   * Document the MTU setting.
+  * Fix bug in list_veth that broke veth support.
 
  -- Josselin Mouette < >  Wed, 26 Jun 2024 08:03:34 +0200
 
