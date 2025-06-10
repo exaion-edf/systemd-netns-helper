@@ -1,0 +1,26 @@
+[Unit]
+Description=Prometheus collector for network namespace %i
+BindsTo=systemd-netns@%i.service
+After=systemd-netns@%i.service
+ConditionPathIsDirectory=/etc/netns/%i/network
+ConditionPathIsDirectory=/var/lib/prometheus/node-exporter
+
+[Service]
+Type=notify
+ExecStart=/bin/ip netns exec %i /usr/sbin/prometheus-netns-collector %i
+ExecStopPost=/bin/rm -f /var/lib/prometheus/node-exporter/netns_%i.prom
+Restart=always
+ReadWritePaths=/var/lib/prometheus/node-exporter
+ProtectSystem=strict
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+#NetworkNamespacePath=/run/netns/%i
+
+[Install]
+WantedBy=multi-user.target

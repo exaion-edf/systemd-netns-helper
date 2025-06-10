@@ -10,7 +10,7 @@ Architecture: all
 Section: admin
 Priority: optional
 Pre-Depends: ${misc:Pre-Depends}
-Depends: systemd, ifupdown, iproute2, ${misc:Depends}, python3
+Depends: systemd, ifupdown, iproute2, ${misc:Depends}, python3, python3-pyroute2, python3-systemd
 Description: Launch systemd services in network namespaces
  This package contains helpers to launch systemd services in
  dedicated network namespaces and configure separate network

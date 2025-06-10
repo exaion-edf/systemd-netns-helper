@@ -80,6 +80,14 @@ All processes launched by the wrapped service should now run in the netns:
 
 The output will show all the PIDs that have been wrapped.
 
+### Metrics monitoring
+
+A collector for prometheus-node-exporter is included. To use it, start
+and enable the service named `promehteus-netns-collector@myservice.service`
+
+It will gather network metrics every 5 seconds and provide them to the
+node exporter.
+
 ## What if I want to run several services on the same interface?
 
 Configure one service in the way we described. Pick the service that

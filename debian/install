@@ -1,3 +1,4 @@
 netns.conf usr/share/systemd-netns-helper
 systemd-netns usr/sbin
+prometheus-netns-collector usr/sbin
 *.service usr/lib/systemd/system

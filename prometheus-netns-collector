@@ -1,0 +1,149 @@
+#! /usr/bin/python3
+
+from pyroute2 import IPRoute
+import sys, os, time
+from systemd.daemon import notify
+
+period = 5
+sysfs_period = 60
+
+if len(sys.argv) != 2:
+    print (f"Usage: {sys.argv[0]} ns_name")
+    sys.exit (-1)
+ns_name = sys.argv[1]
+output = f'/var/lib/prometheus/node-exporter/netns_{ns_name}.prom'
+
+def get_interface_attr (interface, attr, base=10):
+    try:
+        with open (f"/sys/class/net/{interface}/{attr}") as f:
+            content = f.readline().strip()
+            return int (content, base) if base else content
+    except OSError as e:
+        return -1 if base else ""
+
+def get_interfaces (ns_name, ns):
+    ret = {}
+
+    return ret
+
+def get_header (metric_name, metric_type, help):
+    return f'''# HELP {metric_name} {help}
+# TYPE {metric_name} {metric_type}
+'''
+
+class Metrics(dict):
+    def __init__ (self, ns_name, outfile):
+        self.ns_name = ns_name
+        self.outfile = outfile
+        self.sysfs_last = 0
+        self.netlink = IPRoute()
+
+    def update_sysfs (self):
+        now = time.time()
+        if now - self.sysfs_last < sysfs_period: return
+        for interface, attrs in self.items():
+            for prop in ('addr_assign_type', 'speed', 'tx_queue_len', 'dormant', 'name_assign_type'):
+                attrs[prop] = get_interface_attr (interface, prop)
+            attrs["dev_id"] = get_interface_attr (interface, "dev_id", base=16)
+            for prop in ('duplex', 'ifalias'):
+                attrs[prop] = get_interface_attr (interface, prop, base=None)
+        self.sysfs_last = now
+
+    def update_netlink (self):
+        seen = set()
+        for interface in self.netlink.get_links ():
+            name = None
+            attrs = {}
+            for (attr, value) in interface.get("attrs",[]):
+                match attr:
+                    case 'IFLA_IFNAME':
+                        name = value
+                        seen.add (name)
+                    case 'IFLA_STATS64':
+                        for k,v in value.items():
+                            attrs[k] = v
+                    case 'IFLA_STATS'|'IFLA_AF_SPECS':
+                        pass
+                    case 'IFLA_OPERSTATE':
+                        attrs[attr] = value
+                        attrs["is_up"] = int(value == "UP")
+                    case _:
+                        attrs[attr] = value
+            for k,v in interface.items():
+                if k!='attrs': attrs[k]=v
+            if name and attrs:
+                if name in self:
+                    self[name].update (attrs)
+                else:
+                    self[name] = attrs
+        for interface in set(self) - seen: del self[interface]
+
+    def iterate_for_source (self, source):
+        for interface, attrs in self.items():
+            if source in attrs:
+                yield interface, attrs[source]
+
+    def iterate_for_sources (self, sources):
+        for interface, attrs in self.items():
+            yield interface, [attrs.get(source,"") for source in sources]
+
+    def output (self, fd, metric_name, metric_type, help, source):
+        fd.write (get_header (metric_name, metric_type, help))
+        for interface, value in self.iterate_for_source(source):
+            fd.write (f'{metric_name}{{netns="{self.ns_name}",device="{interface}"}} {value}\n')
+
+    def output_network_info (self, fd):
+        fd.write (get_header ("node_network_info", "gauge", "Non-numeric data from /sys/class/net/<iface>, value is always 1."))
+        for interface, [address, broadcast, operstate, duplex, ifalias] in self.iterate_for_sources(["IFLA_ADDRESS", "IFLA_BROADCAST", "IFLA_OPERSTATE", "duplex", "ifalias"]):
+            operstate = operstate.lower()
+            fd.write (f'node_network_info{{netns="{self.ns_name}",device="{interface}",address="{address}",broadcast="{broadcast}",duplex="{duplex}",ifalias="{ifalias}",operstate="{operstate}"}} 1\n')
+
+    def write_metrics (self):
+        self.update_netlink ()
+        self.update_sysfs ()
+        with open (self.outfile+".new", "w") as out:
+            self.output (out, "node_network_address_assign_type", "gauge", "Network device property: address_assign_type", "addr_assign_type")
+            self.output (out, "node_network_carrier", "gauge", "Network device property: carrier", "IFLA_CARRIER")
+            self.output (out, "node_network_carrier_changes_total", "counter", "Network device property: carrier_changes_total", "IFLA_CARRIER_CHANGES")
+            self.output (out, "node_network_carrier_down_changes_total", "counter", "Network device property: carrier_down_changes_total", "IFLA_CARRIER_DOWN_COUNT")
+            self.output (out, "node_network_carrier_up_changes_total", "counter", "Network device property: carrier_up_changes_total", "IFLA_CARRIER_UP_COUNT")
+            self.output (out, "node_network_device_id", "gauge", "Network device property: device_id", "dev_id")
+            self.output (out, "node_network_dormant", "gauge", "Network device property: dormant", "dormant")
+            self.output (out, "node_network_flags", "gauge", "Network device property: flags", "flags")
+            self.output (out, "node_network_iface_id", "gauge", "Network device property: iface_id", "index")
+            self.output (out, "node_network_iface_link", "gauge", "Network device property: iface_link", "IFLA_LINK")
+            self.output (out, "node_network_iface_link_mode", "gauge", "Network device property: iface_link_mode", "IFLA_LINKMODE")
+            self.output_network_info (out)
+            self.output (out, "node_network_mtu_bytes", "gauge", "Network device property: mtu_bytes", "IFLA_MTU")
+            self.output (out, "node_network_name_assign_type", "gauge", "Network device property: name_assign_type", "name_assign_type")
+            self.output (out, "node_network_net_dev_group", "gauge", "Network device property: net_dev_group", "IFLA_GROUP")
+            self.output (out, "node_network_protocol_type", "gauge", "Network device property: protocol_type", "ifi_type")
+            self.output (out, "node_network_receive_bytes_total", "counter", "Network device statistic receive_bytes.", "rx_bytes")
+            self.output (out, "node_network_receive_compressed_total", "counter", "Network device statistic receive_compressed.", "rx_compressed")
+            self.output (out, "node_network_receive_drop_total", "counter", "Network device statistic receive_drop.", "rx_dropped")
+            self.output (out, "node_network_receive_errs_total", "counter", "Network device statistic receive_errs.", "rx_errors")
+            self.output (out, "node_network_receive_fifo_total", "counter", "Network device statistic receive_fifo.", "rx_fifo_errors")
+            self.output (out, "node_network_receive_frame_total", "counter", "Network device statistic receive_frame.", "rx_frame_errors")
+            self.output (out, "node_network_receive_multicast_total", "counter", "Network device statistic receive_multicast.", "multicast")
+            self.output (out, "node_network_receive_nohandler_total", "counter", "Network device statistic receive_nohandler.", "rx_nohandler")
+            self.output (out, "node_network_receive_packets_total", "counter", "Network device statistic receive_packets.", "rx_packets")
+            self.output (out, "node_network_speed_bytes", "gauge", "Network device property: speed_bytes", "speed")
+            self.output (out, "node_network_transmit_bytes_total", "counter", "Network device statistic transmit_bytes.", "tx_bytes")
+            self.output (out, "node_network_transmit_carrier_total", "counter", "Network device statistic transmit_carrier.", "tx_carrier_errors")
+            self.output (out, "node_network_transmit_colls_total", "counter", "Network device statistic transmit_colls.", "collisions")
+            self.output (out, "node_network_transmit_compressed_total", "counter", "Network device statistic transmit_compressed.", "tx_compressed")
+            self.output (out, "node_network_transmit_drop_total", "counter", "Network device statistic transmit_drop.", "tx_dropped")
+            self.output (out, "node_network_transmit_errs_total", "counter", "Network device statistic transmit_errs.", "tx_errors")
+            self.output (out, "node_network_transmit_fifo_total", "counter", "Network device statistic transmit_fifo.", "tx_fifo_errors")
+            self.output (out, "node_network_transmit_packets_total", "counter", "Network device statistic transmit_packets.", "tx_packets")
+            self.output (out, "node_network_transmit_queue_length", "gauge", "Network device property: transmit_queue_length", "tx_queue_len")
+            self.output (out, "node_network_up", "gauge", "Value is 1 if operstate is 'up', 0 otherwise.", "is_up")
+        os.rename (self.outfile+".new", self.outfile)
+
+m = Metrics (ns_name, output)
+m.write_metrics ()
+notify ("READY=1")
+
+while True:
+    time.sleep (period)
+    m.write_metrics ()
