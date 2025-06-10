@@ -105,6 +105,8 @@ restart the master service, you can also add a file in
 
 ## What if I want to communicate with the namespace?
 
+### Method 1: veth devices
+
 We can automatically create a pair of veth devices to that effect.
 
 In `/etc/network/interfaces` create one end of the link. Do not use the
@@ -123,6 +125,52 @@ end of the link:
 
 Now you can communicate with the namespace, and route or proxy your
 packets as you see fit.
+
+### Method 2: bridge
+
+We can create a veth interface that is connected to an existing bridge 
+in the root namespace.
+
+In `/etc/network/interfaces` create a bridge to your physical interface:
+
+	auto br0
+	iface br0 inet static
+	  address 192.168.1.1/24
+	  bridge_ports eth0
+	# Alternative: no address in root namespace
+	iface br0 inet manual
+	  bridge_ports eth0
+
+In `/etc/netns/service1/network/interfaces`, create an interface
+named after the bridge using the `..` separator:
+
+	auto br0..1
+	iface br0..1 inet static
+	  address 192.168.1.2/24
+
+Now you can communicate directly with the network connected to eth0.
+
+## What if I want to make two namespaces communicate together?
+
+Use method 2 above to create a bridge between the two.
+
+In `/etc/network/interfaces` we create a dummy bridge:
+
+       auto inter0
+       iface inter0 inet manual
+         pre-up ip link add inter0 type bridge
+
+In `/etc/netns/service1/network/interfaces`:
+
+       auto inter0..1
+       iface inter0..1 inet static
+         address 192.168.100.0/31
+
+In `/etc/netns/service2/network/interfaces`:
+
+       auto inter0..2
+       iface inter0..2 inet static
+         address 192.168.100.1/31
 
 ## What if I want to do something insane with IPsec tunnels?
 

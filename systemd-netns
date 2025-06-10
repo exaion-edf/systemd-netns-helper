@@ -98,15 +98,27 @@ def list_veth (do_netns):
             if len(line) == 4 and line[0] == 'link-netns' and line[1] == do_netns:
                 yield (line[2], line[3])
 
+def list_autobridge (do_netns):
+    (ifaces, auto_ifaces) = parse_eni (do_netns = do_netns)
+    for iface in ifaces:
+        if '..' in iface:
+            yield (iface.split('..', maxsplit=1)[0], iface)
+
 def create_veth (do_netns):
     for (link1,link2) in list_veth (do_netns):
         run (("ip", "link", "add", "name", link1, "type", "veth", "peer", "name", link2))
         run (("ifup", link1))
+    for (bridge,link) in list_autobridge (do_netns):
+        run (("ip", "link", "add", "name", link, "type", "veth", "peer", "name", link+"_"))
+        run (("ip", "link", "set", "dev", link+"_", "master", bridge))
+        run (("ip", "link", "set", link+"_", "up"))
 
 def destroy_veth (do_netns):
     for (link1,link2) in list_veth (do_netns):
         run_nocheck (("ifdown", link1))
         run_nocheck (("ip", "link", "delete", link1))
+    for (bridge,link) in list_autobridge (do_netns):
+        run_nocheck (("ip", "link", "delete", link))
 
 def move_interfaces (do_netns):
   # Small hack so that ifupdown runs without complaining
@@ -132,7 +144,7 @@ def move_interfaces (do_netns):
   move_ifaces = set()
   for iface in auto_ifaces:
     bondbridge=False
-    if '.' in iface:
+    if '.' in iface and '..' not in iface:
         # VLAN interface
         [physdev, vlan_id] = iface.rsplit ('.', maxsplit=1)
         if physdev in ifaces:
