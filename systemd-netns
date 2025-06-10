@@ -5,6 +5,7 @@ from optparse import OptionParser
 from configparser import ConfigParser
 from subprocess import run as real_run
 from shutil import copy
+from glob import glob
 
 # Use a specific routing table ID for peer-to-peer blocking
 table_p2pblock = "117"
@@ -57,13 +58,16 @@ def destroy_netns (do_netns):
       print ('Killed'+killed)
   run_nocheck (("ip", "netns", "delete", do_netns))
 
-def parse_eni (do_netns=None):
-    if do_netns:
-        filename = f'/etc/netns/{do_netns}/network/interfaces'
-    else:
-        filename = '/etc/network/interfaces'
-    ifaces = {}
-    auto_ifaces = set ()
+def parse_eni (do_netns=None, filename=None, ifaces=None, auto_ifaces=None):
+    if not ifaces:
+        ifaces = {}
+    if not auto_ifaces:
+        auto_ifaces = set()
+    if not filename:
+        if do_netns:
+            filename = f'/etc/netns/{do_netns}/network/interfaces'
+        else:
+            filename = '/etc/network/interfaces'
     cur = None
     with open (filename) as eni:
         for line in eni:
@@ -80,6 +84,9 @@ def parse_eni (do_netns=None):
             elif line[0] == 'rename':
                 # do nothing, it’s handled by ifupdown
                 pass
+            elif line[0] == 'source':
+                for fname in glob(line[1], root_dir=os.path.dirname(filename)):
+                    parse_eni (filename=fname, ifaces=ifaces, auto_ifaces=auto_ifaces)
             else:
                 ifaces[cur].append(line)
     return (ifaces, auto_ifaces)
