@@ -172,6 +172,7 @@ def move_interfaces (do_netns):
     run (("ip", "link", "set", iface, "netns", do_netns))
 
 def ifup_netns (do_netns):
+  run (("ip", "netns", "exec", do_netns, "ip", "link", "set", "dev", "lo", "up"))
   run (("ip", "netns", "exec", do_netns, "ifup", "-a"))
 
 def ifdown_netns (do_netns):
