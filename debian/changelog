@@ -1,3 +1,14 @@
+systemd-netns-helper (0.25) bookworm; urgency=medium
+
+  * Handle "rename" lines in /e/n/i
+  * Handle  "source" stanza in /e/n/i
+  * Force bind mount of resolv.conf to avoid issues with it
+  * Support automatically bridging of interfaces in the namespace.
+  * Set loopback interface up when starting a namespace.
+  * Add prometheus collector.
+
+ -- Josselin Mouette < >  Tue, 10 Jun 2025 13:50:24 +0200
+
 systemd-netns-helper (0.14) bookworm; urgency=medium
 
   * Document the MTU setting.
